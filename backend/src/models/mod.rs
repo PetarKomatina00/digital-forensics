@@ -20,20 +20,21 @@ use serde::{Serialize, Deserialize};
 //     http_status: Option<u16>, 
 // }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct PacketInfo{
+    pub packet_size: Option<u32>,
     pub data_link: Option<DataLinkFrame>,
     pub ip: Option<IpPacketV4>,
     pub transport: Option<Datagram>,
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize)]
 pub struct DataLinkFrame{
     pub src_mac: String,
     pub dst_mac: String,
     pub ethertype: u16,
 }
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct IpPacketV4 {
     pub src: String,
     pub dst: String,
@@ -41,28 +42,29 @@ pub struct IpPacketV4 {
     pub ttl: u8,
 } 
 #[derive(Debug, Clone, Serialize)]
-pub enum Datagram {
-    Tcp {
-        src_port: u16,
-        dst_port: u16,
-        seq: u32,
-        ack: u32,
-        flags: u16,
-    },
-    Udp {
-        src_port: u16,
-        dst_port: u16,
-        length: u16,
-    },
+pub struct Datagram {
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub seq: u32,
+    pub ack: u32,
+    pub flags: u16,
+}
+#[derive(Debug)]
+pub struct ErrorResponse{
+    pub code: String,
+    pub error: String, 
 }
 impl Default for Datagram{
     fn default() -> Self {
-            Datagram::Tcp {
-            src_port: 0,
-            dst_port: 0,
-            seq: 0,
-            ack: 0,
-            flags: 0,
-        }
+        Datagram { src_port: 0, dst_port: 0, seq: 0, ack: 0, flags: 0 }
     }
+}
+
+
+#[derive(Debug, Deserialize)]
+pub struct PacketFilter{
+    pub src_ip: Option<String>,
+    pub dst_ip: Option<String>,
+    pub src_port: Option<u16>,
+    pub dst_port: Option<u16>
 }

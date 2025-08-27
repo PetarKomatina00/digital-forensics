@@ -1,0 +1,44 @@
+import { backend } from "../constants/constants";
+import type { FilterParams, PacketInfo } from "../models/packets";
+export async function fetch_filtered_data({
+  src_ip,
+  dst_ip,
+  src_port,
+  dst_port,
+}: FilterParams): Promise<[PacketInfo]> {
+  try {
+    const params = new URLSearchParams();
+    if (src_ip) params.append("src_ip", src_ip);
+    if (dst_ip) params.append("dst_ip", dst_ip);
+    if (src_port !== 0 && src_port !== undefined)
+      params.append("src_port", src_port.toString());
+    if (dst_port !== 0 && dst_port !== undefined)
+      params.append("dst_port", dst_port.toString());
+
+    const url = `${backend}/filter?${params.toString()}`;
+
+    console.log("URL: {}", url);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error("Something went wrong");
+    }
+    return response.json() as Promise<[PacketInfo]>;
+  } catch (err) {
+    console.log(err);
+    throw new Error("Something went wrong");
+  }
+}
+
+export async function fetch_all_data(): Promise<[PacketInfo]> {
+  try {
+    const response = await fetch(`${backend}`);
+    if (!response.ok) {
+      throw new Error("Server error");
+    }
+    const json = await response.json();
+    return json as Promise<[PacketInfo]>;
+  } catch (err) {
+    console.log(err);
+    throw new Error("Something went wrong");
+  }
+}

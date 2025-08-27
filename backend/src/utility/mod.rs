@@ -1,3 +1,7 @@
+use axum::{routing::get, Router};
+
+use crate::{constants, repository::load_pcap_packets};
+
 pub fn convert_8_to_16(data: &[u8]) -> u16{
     (data[0] as u16) << 8 | data[1] as u16
 }
@@ -17,3 +21,8 @@ pub fn ip_addr_to_string(packet: &[u8]) -> String{
     .collect::<Vec<String>>()
     .join(".")
 }
+
+// pub fn Router() -> Router{
+//     Router::new()
+//         .route("/", get(load_pcap_packets(constants::PCAP_FILE)))
+// }

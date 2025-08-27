@@ -1,10 +1,10 @@
 use axum::{routing::get, Router};
 use pcap::{Capture, Packet};
-use crate::models::{DataLinkFrame, Datagram, IpPacketV4, PacketInfo};
-use crate::utility;
-use std::io::{self, Write};
+use crate::endpoints::get_filter_packets;
+use crate::models::{DataLinkFrame, Datagram, ErrorResponse, IpPacketV4, PacketFilter, PacketInfo};
+use crate::{constants, endpoints, utility};
 
-pub fn get_data_link_frame(packet: &Packet, packet_info: &mut PacketInfo) {
+pub fn get_data_link_frame(packet: &Packet<'_>, packet_info: &mut PacketInfo) {
     
     let data_link_frame = DataLinkFrame {
         src_mac : utility::mac_to_string(&packet[0..6]),
@@ -14,8 +14,7 @@ pub fn get_data_link_frame(packet: &Packet, packet_info: &mut PacketInfo) {
     packet_info.data_link = Some(data_link_frame);
     
 }
-pub fn get_ipv4_internet_packet(packet: &Packet, packet_info: &mut PacketInfo){
-    let source_arr = &packet[26..30];
+pub fn get_ipv4_internet_packet(packet: &Packet<'_>, packet_info: &mut PacketInfo){
     let ip_packet = IpPacketV4 {
         src: utility::ip_addr_to_string(&packet[26..30]),
         dst: utility::ip_addr_to_string(&packet[30..34]),
@@ -55,13 +54,13 @@ pub fn get_ipv4_internet_packet(packet: &Packet, packet_info: &mut PacketInfo){
     // println!("Destination: {}", destination);
 
 }
-pub fn get_transport_datagram_tcp(packet: &Packet, packet_info: &mut PacketInfo){
+pub fn get_transport_datagram_tcp(packet: &Packet<'_>, packet_info: &mut PacketInfo){
     if packet_info.ip.as_ref().unwrap().protocol == 6{
         // TCP
-        let datagram = Datagram::Tcp 
+        let datagram = Datagram
         { 
             src_port: utility::convert_8_to_16(&packet[34..36]), 
-            dst_port: utility::convert_8_to_16(&packet[38..42]), 
+            dst_port: utility::convert_8_to_16(&packet[36..38]), 
             seq: utility::convert_8_to_32(&packet[38..42]), 
             ack: utility::convert_8_to_32(&packet[42..46]), 
             flags: utility::convert_8_to_16(&packet[46..48]) & 0x0FFF
@@ -92,7 +91,10 @@ pub fn get_transport_datagram_tcp(packet: &Packet, packet_info: &mut PacketInfo)
     
 
 }
-pub fn load_pcap_packets(path: &str) -> Vec<PacketInfo>{
+fn get_tcp_payload(packet: &Packet<'_>, packet_info: &mut PacketInfo){
+    
+}
+pub fn load_pcap_packets(path: &str) -> Result<Vec<PacketInfo>, ErrorResponse>{
     let mut packets: Vec<PacketInfo> = Vec::new();
      match Capture::from_file(path){
         Ok(mut cap) => {
@@ -100,22 +102,28 @@ pub fn load_pcap_packets(path: &str) -> Vec<PacketInfo>{
             // let mut packet_num = 1;
             while let Ok(packet) = cap.next_packet(){
                 let mut packet_info = PacketInfo::default();
+
+                packet_info.packet_size = Some(packet.header.len);
                 get_data_link_frame(&packet, &mut packet_info);
                 //println!("{:?}", packet_info.data_link);
                 get_ipv4_internet_packet(&packet, &mut packet_info);
                 get_transport_datagram_tcp(&packet, &mut packet_info);
-
+                get_tcp_payload(&packet, &mut packet_info);
                 packets.push(packet_info);
                 //println!("{:?}", packets[0].data_link);
             }
+            Ok(packets)
         }
         Err(err) => {
             eprintln!("Could not open pcap file: {}", err);
+            Err(ErrorResponse {
+                code: constants::PCAP_FILE_ERR_CODE.to_string(),
+                error: err.to_string()
+            })
         }
     }
-    packets
 }
-pub fn print_packets_in_pcap(packets: Vec<PacketInfo>) {
+pub fn _print_packets_in_pcap(packets: Vec<PacketInfo>) {
     let mut packet_number = 1;
     for packet in packets{
         println!("Packet number: {}", packet_number);
@@ -126,9 +134,34 @@ pub fn print_packets_in_pcap(packets: Vec<PacketInfo>) {
         packet_number += 1;
     }
 }
-// pub fn router() -> Router{
-//     Router::new 
-//         .route("/frame", get(get_data_link_frame))
-// }
+pub fn filter_packets(packets: Vec<PacketInfo>, filter: &PacketFilter) -> Vec<PacketInfo>{
+    packets
+        .iter()
+        .filter(|pck| {
+            if let Some(src) = &filter.src_ip{
+                if *pck.ip.as_ref().unwrap().src != *src {
+                    return false;
+                }
+            }
+            if let Some(dst) = &filter.dst_ip {
+                if *pck.ip.as_ref().unwrap().dst != *dst { return false; }
+            }
+            if let Some(port) = filter.src_port {
+                if pck.transport.as_ref().unwrap().src_port != port { return false; }
+            }
+            if let Some(port) = filter.dst_port {
+                if pck.transport.as_ref().unwrap().dst_port != port { return false; }
+            }
+            true
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn router() -> Router{
+    Router::new()
+        .route("/", get(endpoints::get_pcap_packets))
+        .route("/filter", get(get_filter_packets))
+}
 
 
