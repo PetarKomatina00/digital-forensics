@@ -19,7 +19,7 @@ export function generate_table_data(data: [PacketInfo], packetAppId: number): an
       subRows: subRows.map((s) => {
         let entries = Object.entries(s.data);
         if (s.type === "Transport") {
-          const allowedKeys = ["src_port", "dst_port", "seq", "ack", "flags"]
+          const allowedKeys = ["src_port", "dst_port", "seq", "ack", "flags", "payload"]
           entries = entries.filter(([key]) => allowedKeys.includes(key))
           if (index + 1 === packetAppId && packet.http?.app_id){
               entries = [["app_id", packet.http.app_id], ...entries];
