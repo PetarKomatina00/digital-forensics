@@ -42,3 +42,31 @@ export async function fetch_all_data(): Promise<[PacketInfo]> {
     throw new Error("Something went wrong");
   }
 }
+
+export async function fetch_export_pdf(data: [PacketInfo]){
+  try{
+    const response = await fetch(`${backend}/export`, {
+      method : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok){
+      throw new Error("Server error");
+    }
+    console.log(response.body);
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const doc = document.createElement("a");
+    doc.href = url;
+    document.body.appendChild(doc);
+    doc.click();
+    window.URL.revokeObjectURL(url);
+  }
+  catch(err){
+    console.log(err);
+    throw new Error("Something went wrong");
+  }
+}

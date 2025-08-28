@@ -20,7 +20,8 @@ use serde::{Serialize, Deserialize};
 //     http_status: Option<u16>, 
 // }
 
-#[derive(Debug, Default, Clone, Serialize)]
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PacketInfo{
     pub packet_size: Option<u32>,
     pub data_link: Option<DataLinkFrame>,
@@ -29,13 +30,13 @@ pub struct PacketInfo{
     pub http: Option<WeatherAppId>
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Serialize)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct DataLinkFrame{
     pub src_mac: String,
     pub dst_mac: String,
     pub ethertype: u16,
 }
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct IpPacketV4 {
     pub src: String,
     pub dst: String,
@@ -44,7 +45,7 @@ pub struct IpPacketV4 {
     pub header_len: u8,
     pub total_len: u16
 } 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Datagram {
     pub src_port: u16,
     pub dst_port: u16,
@@ -55,7 +56,7 @@ pub struct Datagram {
     pub payload: Option<String>
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct WeatherAppId{
     pub app_id: String
 }

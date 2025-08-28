@@ -1,13 +1,19 @@
+use std::fs;
 use std::io::{self, Write};
 
-use crate::endpoints::get_filter_packets;
+use crate::endpoints::{export_pdf, get_filter_packets};
 use crate::models::{
     DataLinkFrame, Datagram, ErrorResponse, IpPacketV4, PacketFilter, PacketInfo, WeatherAppId,
 };
 use crate::{constants, endpoints, utility};
+use axum::routing::post;
+use axum::{http, Json};
 use axum::{Router, routing::get};
+use bytes::Bytes;
+use genpdf::elements::{LinearLayout, Paragraph};
+use genpdf::{elements, fonts, Document};
 use pcap::{Capture, Packet};
-
+use std::io::Cursor;
 fn get_weather_appid(packet_info: &mut PacketInfo) {
     let http = packet_info
         .transport
@@ -19,7 +25,7 @@ fn get_weather_appid(packet_info: &mut PacketInfo) {
 
     let marker = "appid=";
     let app_id: Option<usize> = http.find(marker);
-    if app_id.is_some(){
+    if app_id.is_some() {
         let start_app_id = app_id.unwrap() + marker.len();
         let rest = &http[start_app_id..];
         let end_app_id = rest.find('&').unwrap_or(rest.len());
@@ -59,36 +65,6 @@ pub fn get_ipv4_internet_packet(packet: &Packet<'_>, packet_info: &mut PacketInf
         total_len: utility::convert_8_to_16(&packet[16..18]),
     };
     packet_info.ip = Some(ip_packet);
-    // let version_header = packet[14];
-    // let version = version_header & 0xF0;
-    // let version = if version == 64 { "4" } else {"6"};
-    // let header = version_header & 0x0F;
-    // println!("Version: {}", version);
-    // println!("Header: {}", header);
-    // println!("Differentiated SF: {}", &packet[15]);
-    // let total_length_arr = &packet[16..18];
-    // let total_length: u16 = ((total_length_arr[0] as u16) << 8) | total_length_arr[1] as u16;
-    // println!("Total Length: {}", total_length);
-    // let identification = ((packet[18] as u16) << 8) | packet[19] as u16;
-    // println!("Identification: {:?}", identification);
-    // let flag_offset_u8 = &packet[20..22];
-    // let flag_offset_u16: u16 = ((flag_offset_u8[0] as u16) << 8) | flag_offset_u8[1] as u16;
-    // let flag = ((flag_offset_u16 & 0xE000) >> 13) as u8;
-    // let offset = flag_offset_u16 & 0x1FFF;
-    // println!("Flag: {}", flag);
-    // println!("Offset: {}", offset);
-    // println!("Time to Live: {:?}", packet[22]);
-    // println!("Protocol: {:?}", packet[23]);
-    // let header_checksum = (packet[24] as u16) << 8 | packet[25] as u16;
-    // println!("Header Checksum: 0x{:X?}", header_checksum);
-    // let source_arr = &packet[26..30];
-    // let source: String = source_arr[0].to_string() + "." + &source_arr[1].to_string()
-    // + "." + &source_arr[2].to_string() + "." + &source_arr[3].to_string();
-    // println!("Source: {}", source);
-    // let destination_arr  = &packet[30..34];
-    // let destination: String = destination_arr[0].to_string() + "." + &destination_arr[1].to_string()
-    // + "." + &destination_arr[2].to_string() + "." + &destination_arr[3].to_string();
-    // println!("Destination: {}", destination);
 }
 pub fn get_transport_datagram_tcp(packet: &Packet<'_>, packet_info: &mut PacketInfo) {
     if packet_info.ip.as_ref().unwrap().protocol == 6 {
@@ -102,35 +78,18 @@ pub fn get_transport_datagram_tcp(packet: &Packet<'_>, packet_info: &mut PacketI
             payload: None,
         };
         datagram.payload = get_tcp_payload(&packet, packet_info, datagram.header_len);
-        println!("Datagram.payload {:?}", datagram.payload);
         packet_info.transport = Some(datagram);
-        // let destination_port = convert_8_to_16(&packet[36..38]);
-        // println!("Destination Port: {}", destination_port);
-        // let sequence_number = convert_8_to_32(&packet[38..42]);
-        // println!("Sequence number: {}", sequence_number);
-        // let ack_number = convert_8_to_32(&packet[42..46]);
-        // println!("Acknowledgement number: {}", ack_number);
-        // let header_flags = convert_8_to_16(&packet[46..48]);
-        // let mut header = header_flags & 0xF000;
-        // let flags = header_flags & 0x0FFF;
-        // header = header >> 12;
-        // println!("Header: {}", header);
-        // println!("Flags: {:#06X}", flags);
-        // let window = convert_8_to_16(&packet[48..50]);
-        // println!("Window: {}", window);
-        // let checksum = convert_8_to_16(&packet[50..52]);
-        // println!("Checksum: {:#06X}", checksum);
-        // let urgent_pointer = convert_8_to_16(&packet[52..54]);
-        // println!("Urgent Pointer: {}", urgent_pointer);
     }
 }
-fn get_tcp_payload(packet: &Packet<'_>,packet_info: &mut PacketInfo,transport_header_len: u8,) -> Option<String> {
+fn get_tcp_payload(
+    packet: &Packet<'_>,
+    packet_info: &mut PacketInfo,
+    transport_header_len: u8,
+) -> Option<String> {
     let ip_header_len = packet_info.ip.as_ref().unwrap().header_len;
     let ip_total_len = packet_info.ip.as_ref().unwrap().total_len;
 
-    
     if !check_if_payload_exists(ip_header_len, ip_total_len, transport_header_len) {
-        println!("OVde");
         return None;
     }
     let ip_header_len = (ip_header_len as usize) * 4;
@@ -138,9 +97,9 @@ fn get_tcp_payload(packet: &Packet<'_>,packet_info: &mut PacketInfo,transport_he
     let payload_start = 14 + ip_header_len + tcp_header_len;
 
     let payload = &packet[payload_start..];
-    if !payload.is_empty(){
+    if !payload.is_empty() {
         if let Ok(text) = std::str::from_utf8(payload) {
-        return Some(text.to_string());
+            return Some(text.to_string());
         }
     }
 
@@ -153,7 +112,6 @@ pub fn load_pcap_packets(path: &str) -> Result<Vec<PacketInfo>, ErrorResponse> {
             // let mut offset = 0;
             let mut packet_num = 1;
             while let Ok(packet) = cap.next_packet() {
-                println!("Packet numb {}", packet_num);
                 let mut packet_info = PacketInfo::default();
 
                 packet_info.packet_size = Some(packet.header.len);
@@ -166,7 +124,6 @@ pub fn load_pcap_packets(path: &str) -> Result<Vec<PacketInfo>, ErrorResponse> {
                     packet_info.http = None
                 }
                 packets.push(packet_info);
-                //println!("{:?}", packets[0].data_link);
                 packet_num += 1;
             }
             Ok(packets)
@@ -183,10 +140,6 @@ pub fn load_pcap_packets(path: &str) -> Result<Vec<PacketInfo>, ErrorResponse> {
 pub fn _print_packets_in_pcap(packets: Vec<PacketInfo>) {
     let mut packet_number = 1;
     for packet in packets {
-        println!("Packet number: {}", packet_number);
-        println!("{:?}", packet.data_link.as_ref().unwrap());
-        println!("{:?}", packet.ip.as_ref().unwrap());
-        println!("{:?}", packet.transport.as_ref().unwrap());
 
         packet_number += 1;
     }
@@ -221,8 +174,36 @@ pub fn filter_packets(packets: Vec<PacketInfo>, filter: &PacketFilter) -> Vec<Pa
         .collect()
 }
 
+pub fn generate_pdf_report(packets: Vec<PacketInfo>) -> Vec<u8> {
+    let font_family = genpdf::fonts::from_files("src/assets/fonts", "DejaVuSans", None)
+        .expect("Failed to load font family");
+
+    let mut doc = genpdf::Document::new(font_family);
+
+    for (index, packet) in packets.iter().enumerate(){
+        let text = format!("Packet number: {index}");
+        let frame = format!("{:?}", packet.data_link);
+        let ip = format!("{:?}", packet.ip);
+        let datagram = format!("{:?}", packet.transport);
+        let http = format!("{:?}", packet.http);
+
+        let mut layout = LinearLayout::vertical();
+        layout.push(Paragraph::new(text));
+        layout.push(Paragraph::new(frame));
+        layout.push(Paragraph::new(ip));
+        layout.push(Paragraph::new(datagram));
+        layout.push(Paragraph::new(http));
+
+        doc.push(layout);
+    }
+
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    doc.render(&mut buffer).expect("Failed to render PDF");
+    buffer.into_inner()
+}
 pub fn router() -> Router {
     Router::new()
         .route("/", get(endpoints::get_pcap_packets))
         .route("/filter", get(get_filter_packets))
+        .route("/export", post(export_pdf))
 }

@@ -4,7 +4,6 @@ use crate::{constants, repository::load_pcap_packets};
 
 pub fn get_header_len(data: &u8) -> u8{
     let x = (data & 0xF0) >> 4;
-    println!("Header Len TCP, {}", x);
     x
 }
 pub fn convert_8_to_16(data: &[u8]) -> u16{
@@ -18,7 +17,6 @@ pub fn convert_8_to_40(data: &[u8]) -> u64{
     let mut array = [0u8; 8];
     let len = data.len().min(8);
     array[..len].copy_from_slice(&data[..len]);
-    println!("{}", u64::from_be_bytes(array));
     u64::from_be_bytes(array)
 }
 pub fn mac_to_string(packet: &[u8]) -> String{

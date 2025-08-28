@@ -22,27 +22,30 @@ export function Home() {
     setError,
   };
 
+  const handleExportPDF = () => {
+
+  };
   useEffect(() => {
     async function handle_fetch_all_data() {
       setLoading(true);
       const data: [PacketInfo] = await fetch_all_data();
-      
+
       setTimeout(() => {
         setLoading(false);
       }, 2000);
-      
+
       setData(data);
     }
     handle_fetch_all_data();
   }, []);
 
   useEffect(() => {
-    data.map((packet : PacketInfo, index: number) => {
-      if (packet.http?.app_id !== undefined){
-        setPacketAppID(index + 1)
+    data.map((packet: PacketInfo, index: number) => {
+      if (packet.http?.app_id !== undefined) {
+        setPacketAppID(index + 1);
       }
-    })
-  }, [data])
+    });
+  }, [data]);
   if (loading) {
     return (
       <div className="loader-container">
@@ -58,7 +61,7 @@ export function Home() {
               Go to Histogram
             </Link>
           </nav>
-          <PcapTable props={dataState} packetAppID = {packetAppID}/>
+          <PcapTable props={dataState} packetAppID={packetAppID} />
         </>
       );
     }
