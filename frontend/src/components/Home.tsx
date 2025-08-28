@@ -9,7 +9,7 @@ export function Home() {
   const [data, setData] = useState<PacketInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
+  const [packetAppID, setPacketAppID] = useState<number>(-1);
   const sleep = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -26,7 +26,7 @@ export function Home() {
     async function handle_fetch_all_data() {
       setLoading(true);
       const data: [PacketInfo] = await fetch_all_data();
-
+      
       setTimeout(() => {
         setLoading(false);
       }, 2000);
@@ -36,6 +36,13 @@ export function Home() {
     handle_fetch_all_data();
   }, []);
 
+  useEffect(() => {
+    data.map((packet : PacketInfo, index: number) => {
+      if (packet.http?.app_id !== undefined){
+        setPacketAppID(index + 1)
+      }
+    })
+  }, [data])
   if (loading) {
     return (
       <div className="loader-container">
@@ -51,7 +58,7 @@ export function Home() {
               Go to Histogram
             </Link>
           </nav>
-          <PcapTable props={dataState} />
+          <PcapTable props={dataState} packetAppID = {packetAppID}/>
         </>
       );
     }

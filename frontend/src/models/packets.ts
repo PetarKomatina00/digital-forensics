@@ -3,8 +3,12 @@ export interface PacketInfo {
   data_link?: DataLinkFrame;
   ip?: IpPacketV4;
   transport?: Datagram;
+  http?: WeatherAppId
 }
 
+export interface WeatherAppId{
+  app_id: String
+}
 export interface DataLinkFrame {
   src_mac: string;
   dst_mac: string;

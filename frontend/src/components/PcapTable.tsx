@@ -5,14 +5,14 @@ import { fetch_filtered_data } from "../api/api";
 import { generate_columns, generate_table_data } from "../utility/utilities";
 import "../App.css"
 
-function PcapTable({ props }: any) {
+function PcapTable({ props, packetAppID}: any) {
   const [src_ip, setSrcIp] = useState("");
   const [dst_ip, setDstIp] = useState("");
   const [src_port, setSrcPort] = useState(0);
   const [dst_port, setDstPort] = useState(0);
-
   const handleFetchFilterData = async () => {
     try {
+      
       props.setLoading(true);
       const data: [PacketInfo] = await fetch_filtered_data({
         src_ip,
@@ -28,7 +28,7 @@ function PcapTable({ props }: any) {
     }
   };
 
-  const tableData = generate_table_data(props.data);
+  const tableData = generate_table_data(props.data, packetAppID);
   const columns: MRT_ColumnDef<any>[] = generate_columns();
   return (
     <div className="text-center mb-4" style={{ width: "80%", margin: "0 auto" }}>
@@ -90,6 +90,11 @@ function PcapTable({ props }: any) {
         data={tableData}
         state={{ isLoading: props.loading }}
         enableGlobalFilter={false}
+        muiTableBodyRowProps={({row}) => ({
+          sx: {
+            backgroundColor: row.original.id === packetAppID ? "red" : "inherit"
+          }
+        })}
       />
     </div>
   );

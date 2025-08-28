@@ -1,7 +1,7 @@
 import type { MRT_ColumnDef } from "material-react-table";
 import type { PacketInfo, SubRow } from "../models/packets";
 
-export function generate_table_data(data: [PacketInfo]): any{
+export function generate_table_data(data: [PacketInfo], packetAppId: number): any{
   const tableData = data.map((packet: PacketInfo, index: number) => {
     const subRows: SubRow[] = [];
     if (packet.data_link) {
@@ -16,20 +16,31 @@ export function generate_table_data(data: [PacketInfo]): any{
     return {
       id: index + 1,
       label: `Packet ${index + 1}`,
-      subRows: subRows.map((s) => ({
-        type: s.type,
-        data: s.data,
-        subRows: Object.entries(s.data).map(([key, value]) => ({
-          key,
-          value,
-        })),
-      })),
+      subRows: subRows.map((s) => {
+        let entries = Object.entries(s.data);
+        if (s.type === "Transport") {
+          const allowedKeys = ["src_port", "dst_port", "seq", "ack", "flags"]
+          entries = entries.filter(([key]) => allowedKeys.includes(key))
+          if (index + 1 === packetAppId && packet.http?.app_id){
+              entries = [["app_id", packet.http.app_id], ...entries];
+          }
+        }
+        
+        return {
+          type: s.type,
+          data: s.data,
+          subRows: entries.map(([key, value]) => ({
+            key,
+            value,
+          })),
+        };
+      }),
     };
   });
   return tableData;
 }
 export function generate_columns(): MRT_ColumnDef<any>[]{
-    return ([
+    return [
     {
       header: "Label",
       accessorKey: "label",
@@ -46,6 +57,5 @@ export function generate_columns(): MRT_ColumnDef<any>[]{
       header: "Value",
       accessorKey: "value",
     },
-  ]);
-
+  ]
 }
