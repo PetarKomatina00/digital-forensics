@@ -26,6 +26,7 @@ pub struct PacketInfo{
     pub data_link: Option<DataLinkFrame>,
     pub ip: Option<IpPacketV4>,
     pub transport: Option<Datagram>,
+    pub http: Option<WeatherAppId>
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize)]
@@ -40,6 +41,8 @@ pub struct IpPacketV4 {
     pub dst: String,
     pub protocol: u8,   // e.g. 6 = TCP, 17 = UDP
     pub ttl: u8,
+    pub header_len: u8,
+    pub total_len: u16
 } 
 #[derive(Debug, Clone, Serialize)]
 pub struct Datagram {
@@ -48,6 +51,13 @@ pub struct Datagram {
     pub seq: u32,
     pub ack: u32,
     pub flags: u16,
+    pub header_len: u8,
+    pub payload: Option<String>
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct WeatherAppId{
+    pub app_id: String
 }
 #[derive(Debug)]
 pub struct ErrorResponse{
@@ -56,7 +66,7 @@ pub struct ErrorResponse{
 }
 impl Default for Datagram{
     fn default() -> Self {
-        Datagram { src_port: 0, dst_port: 0, seq: 0, ack: 0, flags: 0 }
+        Datagram { src_port: 0, dst_port: 0, seq: 0, ack: 0, flags: 0, header_len: 0, payload: None}
     }
 }
 

@@ -1,25 +1,62 @@
-use axum::{routing::get, Router};
-use pcap::{Capture, Packet};
-use crate::endpoints::get_filter_packets;
-use crate::models::{DataLinkFrame, Datagram, ErrorResponse, IpPacketV4, PacketFilter, PacketInfo};
-use crate::{constants, endpoints, utility};
+use std::io::{self, Write};
 
+use crate::endpoints::get_filter_packets;
+use crate::models::{
+    DataLinkFrame, Datagram, ErrorResponse, IpPacketV4, PacketFilter, PacketInfo, WeatherAppId,
+};
+use crate::{constants, endpoints, utility};
+use axum::{Router, routing::get};
+use pcap::{Capture, Packet};
+
+fn get_weather_appid(packet_info: &mut PacketInfo) {
+    let http = packet_info
+        .transport
+        .as_ref()
+        .unwrap()
+        .payload
+        .as_ref()
+        .unwrap();
+
+    let marker = "appid=";
+    let app_id: Option<usize> = http.find(marker);
+    if app_id.is_some(){
+        let start_app_id = app_id.unwrap() + marker.len();
+        let rest = &http[start_app_id..];
+        let end_app_id = rest.find('&').unwrap_or(rest.len());
+        let weather_app_id = WeatherAppId {
+            app_id: rest[..end_app_id].to_string(),
+        };
+        packet_info.http = Some(weather_app_id);
+    }
+}
+fn check_if_payload_exists(ip_header_len: u8, ip_total_len: u16, transport_header_len: u8) -> bool {
+    //println!("IP header {} TCP Header {} IP total {}", ip_header_len, transport_header_len, ip_total_len);
+    //These are valuated in words. 1 word is 4 Bytes. Need to compare bytes
+    let ip_header_len_bytes = (ip_header_len as u16);
+    let tcp_header_len_bytes = (transport_header_len as u16);
+
+    if ip_header_len_bytes + tcp_header_len_bytes >= ip_total_len {
+        return false;
+    }
+    let payload_len = ip_total_len - (ip_header_len_bytes + tcp_header_len_bytes);
+    payload_len > 0
+}
 pub fn get_data_link_frame(packet: &Packet<'_>, packet_info: &mut PacketInfo) {
-    
     let data_link_frame = DataLinkFrame {
-        src_mac : utility::mac_to_string(&packet[0..6]),
-        dst_mac : utility::mac_to_string(&packet[6..12]),
-        ethertype : utility::convert_8_to_16(&packet[12..14])
+        src_mac: utility::mac_to_string(&packet[0..6]),
+        dst_mac: utility::mac_to_string(&packet[6..12]),
+        ethertype: utility::convert_8_to_16(&packet[12..14]),
     };
     packet_info.data_link = Some(data_link_frame);
-    
 }
-pub fn get_ipv4_internet_packet(packet: &Packet<'_>, packet_info: &mut PacketInfo){
+pub fn get_ipv4_internet_packet(packet: &Packet<'_>, packet_info: &mut PacketInfo) {
     let ip_packet = IpPacketV4 {
         src: utility::ip_addr_to_string(&packet[26..30]),
         dst: utility::ip_addr_to_string(&packet[30..34]),
         protocol: packet[23],
-        ttl: packet[22]
+        ttl: packet[22],
+        header_len: packet[14] & 0x0F,
+        total_len: utility::convert_8_to_16(&packet[16..18]),
     };
     packet_info.ip = Some(ip_packet);
     // let version_header = packet[14];
@@ -52,65 +89,85 @@ pub fn get_ipv4_internet_packet(packet: &Packet<'_>, packet_info: &mut PacketInf
     // let destination: String = destination_arr[0].to_string() + "." + &destination_arr[1].to_string()
     // + "." + &destination_arr[2].to_string() + "." + &destination_arr[3].to_string();
     // println!("Destination: {}", destination);
-
 }
-pub fn get_transport_datagram_tcp(packet: &Packet<'_>, packet_info: &mut PacketInfo){
-    if packet_info.ip.as_ref().unwrap().protocol == 6{
-        // TCP
-        let datagram = Datagram
-        { 
-            src_port: utility::convert_8_to_16(&packet[34..36]), 
-            dst_port: utility::convert_8_to_16(&packet[36..38]), 
-            seq: utility::convert_8_to_32(&packet[38..42]), 
-            ack: utility::convert_8_to_32(&packet[42..46]), 
-            flags: utility::convert_8_to_16(&packet[46..48]) & 0x0FFF
+pub fn get_transport_datagram_tcp(packet: &Packet<'_>, packet_info: &mut PacketInfo) {
+    if packet_info.ip.as_ref().unwrap().protocol == 6 {
+        let mut datagram = Datagram {
+            src_port: utility::convert_8_to_16(&packet[34..36]),
+            dst_port: utility::convert_8_to_16(&packet[36..38]),
+            seq: utility::convert_8_to_32(&packet[38..42]),
+            ack: utility::convert_8_to_32(&packet[42..46]),
+            header_len: utility::get_header_len(&packet[46]),
+            flags: utility::convert_8_to_16(&packet[46..48]) & 0x0FFF,
+            payload: None,
         };
-
+        datagram.payload = get_tcp_payload(&packet, packet_info, datagram.header_len);
+        println!("Datagram.payload {:?}", datagram.payload);
         packet_info.transport = Some(datagram);
+        // let destination_port = convert_8_to_16(&packet[36..38]);
+        // println!("Destination Port: {}", destination_port);
+        // let sequence_number = convert_8_to_32(&packet[38..42]);
+        // println!("Sequence number: {}", sequence_number);
+        // let ack_number = convert_8_to_32(&packet[42..46]);
+        // println!("Acknowledgement number: {}", ack_number);
+        // let header_flags = convert_8_to_16(&packet[46..48]);
+        // let mut header = header_flags & 0xF000;
+        // let flags = header_flags & 0x0FFF;
+        // header = header >> 12;
+        // println!("Header: {}", header);
+        // println!("Flags: {:#06X}", flags);
+        // let window = convert_8_to_16(&packet[48..50]);
+        // println!("Window: {}", window);
+        // let checksum = convert_8_to_16(&packet[50..52]);
+        // println!("Checksum: {:#06X}", checksum);
+        // let urgent_pointer = convert_8_to_16(&packet[52..54]);
+        // println!("Urgent Pointer: {}", urgent_pointer);
+    }
+}
+fn get_tcp_payload(packet: &Packet<'_>,packet_info: &mut PacketInfo,transport_header_len: u8,) -> Option<String> {
+    let ip_header_len = packet_info.ip.as_ref().unwrap().header_len;
+    let ip_total_len = packet_info.ip.as_ref().unwrap().total_len;
+
+    
+    if !check_if_payload_exists(ip_header_len, ip_total_len, transport_header_len) {
+        println!("OVde");
+        return None;
+    }
+    let ip_header_len = (ip_header_len as usize) * 4;
+    let tcp_header_len = (transport_header_len as usize) * 4;
+    let payload_start = 14 + ip_header_len + tcp_header_len;
+
+    let payload = &packet[payload_start..];
+    if !payload.is_empty(){
+        if let Ok(text) = std::str::from_utf8(payload) {
+        return Some(text.to_string());
+        }
     }
 
-    // let destination_port = convert_8_to_16(&packet[36..38]);
-    // println!("Destination Port: {}", destination_port);
-    // let sequence_number = convert_8_to_32(&packet[38..42]);
-    // println!("Sequence number: {}", sequence_number);
-    // let ack_number = convert_8_to_32(&packet[42..46]);
-    // println!("Acknowledgement number: {}", ack_number);
-    // let header_flags = convert_8_to_16(&packet[46..48]);
-    // let mut header = header_flags & 0xF000;
-    // let flags = header_flags & 0x0FFF;
-    // header = header >> 12; 
-    // println!("Header: {}", header);
-    // println!("Flags: {:#06X}", flags);
-    // let window = convert_8_to_16(&packet[48..50]);
-    // println!("Window: {}", window);
-    // let checksum = convert_8_to_16(&packet[50..52]);
-    // println!("Checksum: {:#06X}", checksum);
-    // let urgent_pointer = convert_8_to_16(&packet[52..54]);
-    // println!("Urgent Pointer: {}", urgent_pointer);
-
-    
-
+    None
 }
-fn get_tcp_payload(packet: &Packet<'_>, packet_info: &mut PacketInfo){
-    
-}
-pub fn load_pcap_packets(path: &str) -> Result<Vec<PacketInfo>, ErrorResponse>{
+pub fn load_pcap_packets(path: &str) -> Result<Vec<PacketInfo>, ErrorResponse> {
     let mut packets: Vec<PacketInfo> = Vec::new();
-     match Capture::from_file(path){
+    match Capture::from_file(path) {
         Ok(mut cap) => {
             // let mut offset = 0;
-            // let mut packet_num = 1;
-            while let Ok(packet) = cap.next_packet(){
+            let mut packet_num = 1;
+            while let Ok(packet) = cap.next_packet() {
+                println!("Packet numb {}", packet_num);
                 let mut packet_info = PacketInfo::default();
 
                 packet_info.packet_size = Some(packet.header.len);
                 get_data_link_frame(&packet, &mut packet_info);
-                //println!("{:?}", packet_info.data_link);
                 get_ipv4_internet_packet(&packet, &mut packet_info);
                 get_transport_datagram_tcp(&packet, &mut packet_info);
-                get_tcp_payload(&packet, &mut packet_info);
+                if packet_info.transport.as_ref().unwrap().payload.is_some() {
+                    get_weather_appid(&mut packet_info);
+                } else {
+                    packet_info.http = None
+                }
                 packets.push(packet_info);
                 //println!("{:?}", packets[0].data_link);
+                packet_num += 1;
             }
             Ok(packets)
         }
@@ -118,14 +175,14 @@ pub fn load_pcap_packets(path: &str) -> Result<Vec<PacketInfo>, ErrorResponse>{
             eprintln!("Could not open pcap file: {}", err);
             Err(ErrorResponse {
                 code: constants::PCAP_FILE_ERR_CODE.to_string(),
-                error: err.to_string()
+                error: err.to_string(),
             })
         }
     }
 }
 pub fn _print_packets_in_pcap(packets: Vec<PacketInfo>) {
     let mut packet_number = 1;
-    for packet in packets{
+    for packet in packets {
         println!("Packet number: {}", packet_number);
         println!("{:?}", packet.data_link.as_ref().unwrap());
         println!("{:?}", packet.ip.as_ref().unwrap());
@@ -134,23 +191,29 @@ pub fn _print_packets_in_pcap(packets: Vec<PacketInfo>) {
         packet_number += 1;
     }
 }
-pub fn filter_packets(packets: Vec<PacketInfo>, filter: &PacketFilter) -> Vec<PacketInfo>{
+pub fn filter_packets(packets: Vec<PacketInfo>, filter: &PacketFilter) -> Vec<PacketInfo> {
     packets
         .iter()
         .filter(|pck| {
-            if let Some(src) = &filter.src_ip{
+            if let Some(src) = &filter.src_ip {
                 if *pck.ip.as_ref().unwrap().src != *src {
                     return false;
                 }
             }
             if let Some(dst) = &filter.dst_ip {
-                if *pck.ip.as_ref().unwrap().dst != *dst { return false; }
+                if *pck.ip.as_ref().unwrap().dst != *dst {
+                    return false;
+                }
             }
             if let Some(port) = filter.src_port {
-                if pck.transport.as_ref().unwrap().src_port != port { return false; }
+                if pck.transport.as_ref().unwrap().src_port != port {
+                    return false;
+                }
             }
             if let Some(port) = filter.dst_port {
-                if pck.transport.as_ref().unwrap().dst_port != port { return false; }
+                if pck.transport.as_ref().unwrap().dst_port != port {
+                    return false;
+                }
             }
             true
         })
@@ -158,10 +221,8 @@ pub fn filter_packets(packets: Vec<PacketInfo>, filter: &PacketFilter) -> Vec<Pa
         .collect()
 }
 
-pub fn router() -> Router{
+pub fn router() -> Router {
     Router::new()
         .route("/", get(endpoints::get_pcap_packets))
         .route("/filter", get(get_filter_packets))
 }
-
-
